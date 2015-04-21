@@ -185,4 +185,5 @@ def post(r, destination)
     puts "Response #{response.code} #{response.message}:#{response.body}"
 end
 
+init
 report
