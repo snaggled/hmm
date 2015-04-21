@@ -294,16 +294,20 @@ class HMM
 		
 		def forward_probability(sequence)
 			alpha = NArray.float(sequence.length, q_lex.length).fill(-Infinity)
-			
-			alpha[0, true] = log(@pi) + log(@b[true, index(sequence.first, o_lex)])
-			
+		
+            #if (o_lex.include?(sequence.first))    
+			    alpha[0, true] = log(@pi) + log(@b[true, index(sequence.first, o_lex)])
+            #else
+			#    alpha[0, true] = log(@pi)
+            #end
+
 			sequence.each_with_index do |o, t|
 				next if t==0
 				q_lex.each_index do |i|
 					q_lex.each_index do |j|
 						alpha[t, i] = log_add([alpha[t, i], alpha[t-1, j]+log(@a[j, i])])
 					end
-					alpha[t, i] += log(b[i, index(o, o_lex)])
+					alpha[t, i] += log(b[i, index(o, o_lex)])# if o_lex.include?(o)
 				end
 			end
 			alpha
