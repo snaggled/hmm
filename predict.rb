@@ -170,8 +170,8 @@ def report
 end
 
 def post(r, destination)
-    @host = "localhost"
-    @port = 3030
+    @host = "towerofglass.herokuapp.com"
+    @port = 80
     @post_ws = "/widgets/#{destination}"
     @payload = {'auth_token' => 'hoopla', 
                 'current' => r.c.round(2),
