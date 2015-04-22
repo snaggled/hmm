@@ -33,10 +33,10 @@ Models = {}
 
 def init(file="companylist.csv")
 
-    puts "clearing collections"
+    #puts "clearing collections"
     Prediction.delete_all
 
-    puts "opening master file #{file}"
+    #puts "opening master file #{file}"
     CSV.new(open(file)).each do |row|
 
         Quote.delete_all
@@ -46,7 +46,7 @@ def init(file="companylist.csv")
 
         ticker = row[0]
         next if ticker == 'Symbol'
-        puts "fetching #{ticker}" 
+        #puts "fetching #{ticker}" 
         url = "http://ichart.finance.yahoo.com/table.csv?d=6&e=1&f=2015&g=d&a=7&b=19&c=2004%20&ignore=.csv&s=#{ticker}"
         count = 0
         begin
@@ -58,11 +58,12 @@ def init(file="companylist.csv")
                 q.t = ticker
                 q.save
                 count = count + 1
+                break if count == 1000
             end
         rescue
         end
-        puts "#{count} records"
-        next if count == 0
+        puts "#{count} records for #{ticker}"
+        next if count == 0# or count < 1000 or count > 2000
 
         puts "train #{ticker}"
         train(ticker)
@@ -71,27 +72,33 @@ def init(file="companylist.csv")
         predict(ticker)
     end
 
-    puts "report"
+    #puts "report"
     report
 end
 
 
 def train(ticker)
 
-    puts "records for #{ticker} == #{Quote.where(:t => ticker).count}"
-    for i in (1..Quote.where(:t => ticker).count - 5).step(1) do
-        quotes = Quote.where(:t => ticker).sort(:date.asc).limit(5).skip(i).to_a
+    #puts "records for #{ticker} == #{Quote.where(:t => ticker).count}"
+    startdate = 730.days.ago
+    #for i in (1..Quote.where(:t => ticker, :date.gt => startdate).count - 5).step(1) do
+    begin
+    for i in (1..500).step(1) do
+        quotes = Quote.where(:t => ticker, :date.gt => startdate).sort(:date.asc).limit(5).skip(i).to_a.reverse!
 
         t = (1 - (quotes.first.o/quotes.last.c))*100
        
         next if t >= 100 or t <= -100
         outputs = []
         for q in quotes do
+                puts "#{q.t} -> #{q.date} -> #{q.c}"
             d = (1 - (q.o/q.c))*100
             outputs << d.to_i
         end
         model =  Models[t.to_i]
         model.add_to_train(outputs, ['A', 'B', 'C', 'D', 'E']) 
+    end
+    rescue
     end
 
     for delta, model in Models do
@@ -107,12 +114,10 @@ def predict(ticker)
     start = Time.now 
     return if Quote.where(:t => ticker).count < 100
     quotes = Quote.where(:t => ticker, :date.lte => start).limit(4).to_a.reverse!
-    for q in quotes do
-            puts q.date
-    end
 
     outputs = []
     for q in quotes[0..3] do
+        puts "train #{q.t} -> #{q.date} -> #{q.c}"
         d = ((1 - (q.o/q.c))*100)
         outputs << d.to_i
     end
@@ -135,16 +140,20 @@ def predict(ticker)
 
     k = lh.keys.max
     v = lh[k]
-   
-    pdf = Rubystats::NormalDistribution.new()
-    p = Prediction.new({:delta => v, 
-                        :ticker => ticker, 
-                        :o => quotes[3].c, 
-                        :c => quotes[0].o * (1 + (v.to_f/100)), 
-                        :likelihood => k, 
-                        :date => quotes[3].date,
-                        :pv => (pdf.pdf(k) * v).abs})
-    p.save
+    puts "#{quotes[0].c} --> #{quotes[0].o * (1 + (v.to_f/100))}"  
+    begin
+        pdf = Rubystats::NormalDistribution.new()
+        p = Prediction.new({:delta => v, 
+                            :ticker => ticker, 
+                            :o => quotes[3].c, 
+                            :c => quotes[0].o * (1 + (v.to_f/100)), 
+                            :likelihood => k, 
+                            :date => quotes[3].date,
+                            :pv => (pdf.pdf(k) * v).abs})
+        p.save
+    rescue
+        puts "Failed to save #{ticker}"
+    end
 end
 
 def report
@@ -165,7 +174,10 @@ def report
               [hlpvd5, "hlpvd5"],
               [hlpvd10, "hlpvd10"],
               [hspv, "hspv"]] do
-        post(r[0], r[1])
+        begin
+            post(r[0], r[1])
+        rescue
+        end
     end
 end
 
@@ -185,5 +197,11 @@ def post(r, destination)
     puts "Response #{response.code} #{response.message}:#{response.body}"
 end
 
-init
-report
+if ARGV[0] == 'predict'
+    init(ARGV[1])
+    report
+elsif ARGV[0] == 'report'
+    report
+else
+    puts "usage: ruby predict.rb [predict <dji.csv|sp500.csv|nasdaq.csv> | report]"
+end
